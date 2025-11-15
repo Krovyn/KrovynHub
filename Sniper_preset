@@ -1,0 +1,335 @@
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+
+local CONFIG = {
+	MaxVisible = 3,
+	Spacing = 10,
+	Width = 350,
+	Padding = 12,
+	Corner = 12,
+	FadeTime = 0.22,
+	SlideTime = 0.28,
+	DefaultDuration = 4,
+	Styles = {
+		info    = {Accent = Color3.fromRGB(255, 0, 0), Bg = Color3.fromRGB(0, 0, 0), Text = Color3.fromRGB(255, 0, 0)},
+		success = {Accent = Color3.fromRGB(16, 185, 129), Bg = Color3.fromRGB(240, 255, 244), Text = Color3.fromRGB(18,18,18)},
+		warn    = {Accent = Color3.fromRGB(245, 158, 11), Bg = Color3.fromRGB(255, 250, 240), Text = Color3.fromRGB(18,18,18)},
+		error   = {Accent = Color3.fromRGB(239, 68, 68), Bg = Color3.fromRGB(255, 244, 244), Text = Color3.fromRGB(18,18,18)}
+	}
+}
+
+local visible = {}
+local queue = {}
+
+local root = Instance.new("ScreenGui")
+root.Name = "CoolNotificationGUI"
+root.ResetOnSpawn = false
+root.Parent = player:WaitForChild("PlayerGui")
+
+local container = Instance.new("Frame")
+container.BackgroundTransparency = 1
+container.Size = UDim2.new(0, CONFIG.Width, 0, 0)
+container.Position = UDim2.new(0.98, 0, 0.05, 0)
+container.AnchorPoint = Vector2.new(1, 0)
+container.Parent = root
+
+local function createNotification(title, message, styleKey)
+	local style = CONFIG.Styles[styleKey] or CONFIG.Styles.info
+
+	local main = Instance.new("Frame")
+	main.Size = UDim2.new(1, 0, 0, 72)
+	main.BackgroundColor3 = style.Bg
+	main.BorderSizePixel = 0
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, CONFIG.Corner)
+	corner.Parent = main
+
+	local pad = Instance.new("UIPadding")
+	pad.PaddingLeft   = UDim.new(0, CONFIG.Padding)
+	pad.PaddingRight  = UDim.new(0, CONFIG.Padding)
+	pad.PaddingTop    = UDim.new(0, 10)
+	pad.PaddingBottom = UDim.new(0, 10)
+	pad.Parent = main
+
+	local accent = Instance.new("Frame")
+	accent.Size = UDim2.new(0, 6, 1, 0)
+	accent.BackgroundColor3 = style.Accent
+	accent.BorderSizePixel = 0
+	accent.Parent = main
+
+	local content = Instance.new("Frame")
+	content.BackgroundTransparency = 1
+	content.Size = UDim2.new(1, -CONFIG.Padding*2 - 6, 1, 0)
+	content.Position = UDim2.new(0, 6 + CONFIG.Padding, 0, 0)
+	content.Parent = main
+
+	local titleLabel = Instance.new("TextLabel")
+	titleLabel.Size = UDim2.new(1, 0, 0, 22)
+	titleLabel.BackgroundTransparency = 1
+	titleLabel.Font = Enum.Font.SourceSansBold
+	titleLabel.TextSize = 16
+	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+	titleLabel.Text = title
+	titleLabel.TextColor3 = style.Text
+	titleLabel.Parent = content
+
+	local body = Instance.new("TextLabel")
+	body.Size = UDim2.new(1, 0, 0, 36)
+	body.Position = UDim2.new(0, 0, 0, 22)
+	body.BackgroundTransparency = 1
+	body.Font = Enum.Font.SourceSans
+	body.TextSize = 14
+	body.TextWrapped = true
+	body.TextXAlignment = Enum.TextXAlignment.Left
+	body.Text = message
+	body.TextColor3 = style.Text
+	body.Parent = content
+
+	local progressBg = Instance.new("Frame")
+	progressBg.Size = UDim2.new(1, 0, 0, 6)
+	progressBg.Position = UDim2.new(0, 0, 1, -6)
+	progressBg.BackgroundTransparency = 0.85
+	progressBg.BorderSizePixel = 0
+	progressBg.Parent = main
+
+	local progress = Instance.new("Frame")
+	progress.Size = UDim2.new(1, 0, 1, 0)
+	progress.BackgroundColor3 = style.Accent
+	progress.BorderSizePixel = 0
+	progress.Parent = progressBg
+
+	return main, progress
+end
+
+local function layout()
+	local h = 0
+	for i, v in ipairs(visible) do
+		local frame = v.Instance
+		local targetY = (i - 1) * (frame.Size.Y.Offset + CONFIG.Spacing)
+
+		TweenService:Create(frame, TweenInfo.new(CONFIG.SlideTime, Enum.EasingStyle.Quart), {
+			Position = UDim2.new(0, 0, 0, targetY)
+		}):Play()
+
+		h = h + frame.Size.Y.Offset
+	end
+
+	container.Size = UDim2.new(0, CONFIG.Width, 0, h + CONFIG.Spacing * (#visible - 1))
+end
+
+local function show(data)
+	local ui, progress = createNotification(data.title, data.message, data.style)
+	ui.Parent = container
+
+	table.insert(visible, {Instance = ui})
+	layout()
+
+	ui.BackgroundTransparency = 1
+	for _, obj in ipairs(ui:GetDescendants()) do
+		if obj:IsA("TextLabel") then obj.TextTransparency = 1 end
+	end
+
+	TweenService:Create(ui, TweenInfo.new(CONFIG.FadeTime), {BackgroundTransparency = 0}):Play()
+	for _, obj in ipairs(ui:GetDescendants()) do
+		if obj:IsA("TextLabel") then
+			TweenService:Create(obj, TweenInfo.new(CONFIG.FadeTime), {TextTransparency = 0}):Play()
+		end
+	end
+
+	local start = tick()
+	spawn(function()
+		while true do
+			local t = 1 - ((tick() - start) / data.duration)
+			t = math.clamp(t, 0, 1)
+			progress.Size = UDim2.new(t, 0, 1, 0)
+			if t <= 0 then break end
+			RunService.Heartbeat:Wait()
+		end
+
+		TweenService:Create(ui, TweenInfo.new(CONFIG.FadeTime), {BackgroundTransparency = 1}):Play()
+		for _, obj in ipairs(ui:GetDescendants()) do
+			if obj:IsA("TextLabel") then
+				TweenService:Create(obj, TweenInfo.new(CONFIG.FadeTime), {TextTransparency = 1}):Play()
+			end
+		end
+
+		wait(CONFIG.FadeTime + 0.05)
+		for i, v in ipairs(visible) do
+			if v.Instance == ui then table.remove(visible, i) break end
+		end
+		ui:Destroy()
+		layout()
+
+		if #queue > 0 then
+			local nextData = table.remove(queue, 1)
+			show(nextData)
+		end
+	end)
+end
+
+_G.Notify = function(title, message, duration, style)
+	local d = {
+		title = title or "Title",
+		message = message or "Message",
+		duration = duration or CONFIG.DefaultDuration,
+		style = style or "info"
+	}
+
+	if #visible >= CONFIG.MaxVisible then
+		table.insert(queue, d)
+	else
+		show(d)
+	end
+end
+
+local function setHitbox()
+	for _,player in pairs(Players:GetPlayers()) do
+		if player ~= game.Players.LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+			local hrp = player.Character.HumanoidRootPart
+			hrp.Size = Vector3.new(75,75,75)
+			hrp.Transparency = getgenv().Setting.HITBOX_VISIBLE and 0.9 or 1
+			hrp.BrickColor = BrickColor.new("Really red")
+			hrp.Material = Enum.Material.Neon
+			hrp.CanCollide = false
+		end
+	end
+end
+task.spawn(function()
+	while task.wait(.1) do
+		setHitbox()
+	end
+end)
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "TiltFlyButtonGUI"
+gui.ResetOnSpawn = false
+gui.Parent = player.PlayerGui
+
+local button = Instance.new("TextButton")
+button.Size = UDim2.new(0, 100, 0, 40)
+button.Position = UDim2.new(0, 25, 0.2, 0)
+button.Text = "glitch jump".."(".. getgenv().Setting.JumpKey..")"
+button.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+button.TextColor3 = Color3.new(1, 0, 0)
+button.Font = Enum.Font.SourceSansBold
+button.TextSize = 16
+button.Parent = gui
+button.Draggable = true
+button.Active = true
+local uiConner = Instance.new("UICorner",button)
+uiConner.CornerRadius = UDim.new(0.5,0)
+
+local function Jump()
+	local character = player.Character or player.CharacterAdded:Wait()
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+	root.Velocity = Vector3.new(0, 360, 0) 
+end
+
+button.MouseButton1Click:Connect(function()
+	Jump()
+end)
+
+local jumpKeyEnum = Enum.KeyCode[string.upper(getgenv().Setting.JumpKey)]
+game:GetService("UserInputService").InputBegan:Connect(function(key,gameProcessed)
+	if key.KeyCode == jumpKeyEnum and not gameProcessed then
+		Jump()
+	end
+end)
+
+local button = Instance.new("TextButton")
+button.Size = UDim2.new(0, 100, 0, 40)
+button.Position = UDim2.new(0, 25, 0.35, 0)
+button.Text = "speed boost:off"
+button.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+button.TextColor3 = Color3.new(1, 0, 0)
+button.Font = Enum.Font.SourceSansBold
+button.TextSize = 16
+button.Parent = gui
+button.Draggable = true
+button.Active = true
+local uiConner = Instance.new("UICorner",button)
+uiConner.CornerRadius = UDim.new(0.5,0)
+
+local speedBoost = false
+local SpeedConnection
+local function ApplySpeed()
+	if player.Character and player.Character:FindFirstChild("Humanoid") then
+		local Humanoid = player.Character.Humanoid
+		if speedBoost then
+			if SpeedConnection then
+				SpeedConnection:Disconnect()
+			end
+			Humanoid.WalkSpeed = 350
+			SpeedConnection = Humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+				Humanoid.WalkSpeed = 350
+			end)
+		else
+			if SpeedConnection then
+				SpeedConnection:Disconnect()
+			end
+		end
+	end
+end
+
+button.MouseButton1Click:Connect(function()
+	speedBoost = not speedBoost
+	button.Text = speedBoost and "speed boost:on" or "speed boost:off"
+	ApplySpeed()
+end)
+
+local espConnections = {}
+local function addNameEsp(plr)
+	if not plr.Character or not plr.Character:FindFirstChild("Head") then return end
+	if plr.Character.Head:FindFirstChild("ESP") then return end
+
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "ESP"
+	billboard.Size = UDim2.new(0, 160, 0, 30)
+	billboard.StudsOffset = Vector3.new(0, 3, 0)
+	billboard.AlwaysOnTop = true
+	billboard.Adornee = plr.Character.Head
+
+	local label = Instance.new("TextLabel", billboard)
+	label.AnchorPoint = Vector2.new(0.5,0.5)
+	label.Position = UDim2.new(0.5,0,0.5,0)
+	label.Size = UDim2.new(1,0,1,0)
+	label.BackgroundTransparency = 1
+	label.TextColor3 = Color3.new(1,0,0)
+	label.TextStrokeTransparency = 0.5
+	label.Font = Enum.Font.Michroma
+	label.TextScaled = true
+	label.RichText = true
+
+	billboard.Parent = plr.Character.Head
+
+	local humanoid = plr.Character:FindFirstChild("Humanoid")
+	local function updateLabel()
+		label.Text = string.format(
+			"<font color='rgb(255,0,0)'>%s</font>\n<font color='rgb(85,255,255)'>[%d / %d]</font>",
+			plr.Name, math.floor(humanoid.Health), humanoid.MaxHealth
+		)
+	end
+
+	updateLabel()
+	Color3.fromRGB()
+
+	espConnections[plr] = {}
+	table.insert(espConnections[plr], humanoid.HealthChanged:Connect(updateLabel))
+	table.insert(espConnections[plr], RunService.RenderStepped:Connect(updateLabel))
+end
+
+task.spawn(function()
+	while task.wait(0.1) do
+		for _, plr in ipairs(Players:GetPlayers()) do
+			if plr ~= player then
+				addNameEsp(plr)
+			end
+		end
+	end
+end)
+
+_G.Notify("Set up complete!", "by krovyn hub", 5, "info")
